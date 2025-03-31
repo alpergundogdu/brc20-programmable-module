@@ -6,8 +6,9 @@ use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use serde::Deserialize;
 
-use super::INDEXER_ADDRESS;
+use super::DEV_ADDRESS;
 use crate::db::types::{BlockResponseED, LogResponseED, TxED, TxReceiptED};
+use crate::db::B256ED;
 
 #[rpc(server)]
 pub trait Brc20ProgApi {
@@ -171,6 +172,10 @@ pub trait Brc20ProgApi {
     #[method(name = "eth_estimateGas")]
     async fn estimate_gas(&self, eth_call: EthCall, block: Option<String>) -> RpcResult<String>;
 
+    /// Estimates the gas for the given transaction
+    #[method(name = "eth_sendTransaction")]
+    async fn send_transaction(&self, eth_call: EthCall) -> RpcResult<B256ED>;
+
     /// Get storage for the given contract and memory location
     #[method(name = "eth_getStorageAt")]
     async fn get_storage_at(
@@ -237,7 +242,7 @@ pub trait Brc20ProgApi {
     /// Returns the balance of the account at the given address (0 in BRC20)
     #[method(name = "eth_getBalance")]
     async fn get_balance(&self, _address: AddressWrapper, _block: String) -> RpcResult<String> {
-        Ok("0x0".to_string())
+        Ok("0xDE0B6B3A7640000".to_string())
     }
 
     /// Returns the uncle count of the block at the given block number (0 in BRC20)
@@ -281,7 +286,7 @@ pub trait Brc20ProgApi {
     /// Returns accounts (BRC20 indexer address)
     #[method(name = "eth_accounts")]
     async fn accounts(&self) -> RpcResult<Vec<String>> {
-        Ok(vec![INDEXER_ADDRESS.to_string()])
+        Ok(vec![DEV_ADDRESS.to_string()])
     }
 }
 

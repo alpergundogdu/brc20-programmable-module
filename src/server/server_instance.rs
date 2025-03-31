@@ -530,7 +530,15 @@ impl ServerInstance {
         Ok(())
     }
 
-    pub fn call_contract(&self, tx_info: &TxInfo) -> Result<TxReceiptED, &'static str> {
+    pub fn view_contract(&self, tx_info: &TxInfo) -> Result<TxReceiptED, &'static str> {
+        self.call_contract(tx_info, false)
+    }
+
+    pub fn call_contract(
+        &self,
+        tx_info: &TxInfo,
+        commit: bool,
+    ) -> Result<TxReceiptED, &'static str> {
         #[cfg(debug_assertions)]
         println!(
             "Calling contract from: {:?} to: {:?}",
@@ -539,6 +547,30 @@ impl ServerInstance {
         self.require_no_waiting_txes()?;
 
         let number = self.get_next_block_height();
+
+        if commit {
+            let hash = {
+                // just hash the number
+                let bytes = number.to_be_bytes();
+                let full_bytes = [0u8; 24]
+                    .iter()
+                    .chain(bytes.iter())
+                    .copied()
+                    .collect::<Vec<u8>>();
+                B256::from_slice(&full_bytes)
+            };
+            let result = self.add_tx_to_block(
+                0,
+                tx_info,
+                0,
+                number,
+                hash,
+                None,
+                Some(tx_info.data.len() as u64),
+            );
+            self.finalise_block(0, number, hash, 1)?;
+            return result;
+        }
 
         let timestamp = std::time::UNIX_EPOCH.elapsed().unwrap().as_secs();
         let block_info: BlockEnv = BlockEnv {
@@ -579,27 +611,28 @@ impl ServerInstance {
             return Err("Error while calling contract");
         }
 
+        let output = output.as_ref().unwrap();
+
         Ok(TxReceiptED {
-            status: output.as_ref().unwrap().is_success() as u8,
-            transaction_result: get_result_type(output.as_ref().unwrap()),
-            reason: get_result_reason(output.as_ref().unwrap()),
-            result_bytes: output.as_ref().unwrap().output().cloned(),
+            status: output.is_success() as u8,
+            transaction_result: get_result_type(output),
+            reason: get_result_reason(output),
+            result_bytes: output.output().cloned(),
             logs: LogED {
-                logs: output.as_ref().unwrap().logs().to_vec(),
+                logs: output.logs().to_vec(),
                 log_index: 0,
             },
-            gas_used: output.as_ref().unwrap().gas_used(),
+            gas_used: output.gas_used(),
             from: AddressED(tx_info.from),
             to: tx_info.to.map(AddressED),
-            contract_address: get_contract_address(output.as_ref().unwrap()).map(AddressED),
-            logs_bloom: B2048ED::decode(logs_bloom(output.as_ref().unwrap().logs()).to_vec())
-                .unwrap(),
+            contract_address: get_contract_address(output).map(AddressED),
+            logs_bloom: B2048ED::decode(logs_bloom(output.logs()).to_vec()).unwrap(),
             hash: B256ED::from_b256(txhash),
             block_number: number,
             block_timestamp: timestamp,
             transaction_hash: B256ED::from_b256(txhash),
             transaction_index: 0,
-            cumulative_gas_used: output.as_ref().unwrap().gas_used(),
+            cumulative_gas_used: output.gas_used(),
             nonce,
             effective_gas_price: 0,
             transaction_type: 0,

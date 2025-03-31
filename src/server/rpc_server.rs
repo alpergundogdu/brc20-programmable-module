@@ -15,6 +15,7 @@ use crate::brc20_controller::{
     decode_brc20_balance_result, load_brc20_balance_tx, load_brc20_burn_tx, load_brc20_mint_tx,
 };
 use crate::db::types::{BlockResponseED, LogResponseED, TxED, TxReceiptED};
+use crate::db::B256ED;
 use crate::evm::get_evm_address;
 use crate::server::api::GetLogsFilter;
 use crate::server::server_instance::ServerInstance;
@@ -112,7 +113,7 @@ impl Brc20ProgApiServer for RpcServer {
         event!(Level::INFO, "Checking balance");
 
         self.server_instance
-            .call_contract(&load_brc20_balance_tx(ticker, get_evm_address(&pkscript)))
+            .view_contract(&load_brc20_balance_tx(ticker, get_evm_address(&pkscript)))
             .map(|receipt| {
                 format!(
                     "0x{:x}",
@@ -362,12 +363,12 @@ impl Brc20ProgApiServer for RpcServer {
                 .unwrap_or(Bytes::new()),
         );
         self.server_instance
-            .call_contract(&TxInfo {
+            .view_contract(&TxInfo {
                 from: call.from.value(),
                 to: call.to.map(|x| x.value()),
                 data: data,
             })
-            .map(|receipt| receipt.result_bytes.unwrap_or(Bytes::new()).to_string())
+            .map(|result| result.result_bytes.unwrap_or(Bytes::new()).to_string())
             .map_err(wrap_error_message)
     }
 
@@ -380,12 +381,33 @@ impl Brc20ProgApiServer for RpcServer {
                 .unwrap_or(Bytes::new()),
         );
         self.server_instance
-            .call_contract(&TxInfo {
+            .view_contract(&TxInfo {
                 from: call.from.value(),
                 to: call.to.map(|x| x.value()),
                 data: data,
             })
             .map(|receipt| format!("0x{:x}", receipt.gas_used))
+            .map_err(wrap_error_message)
+    }
+
+    #[instrument(skip(self))]
+    async fn send_transaction(&self, call: EthCall) -> RpcResult<B256ED> {
+        event!(Level::INFO, "Sending transaction");
+        let data = call.data.map(|x| x.value().clone()).unwrap_or(
+            call.input
+                .map(|x| x.value().clone())
+                .unwrap_or(Bytes::new()),
+        );
+        self.server_instance
+            .call_contract(
+                &TxInfo {
+                    from: call.from.value(),
+                    to: call.to.map(|x| x.value()),
+                    data: data,
+                },
+                true,
+            )
+            .map(|receipt| receipt.transaction_hash)
             .map_err(wrap_error_message)
     }
 
